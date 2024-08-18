@@ -11,14 +11,32 @@
       <span>{{ showAddForm ? 'Cancel' : 'Add User' }}</span>
     </button>
     
-    <div v-if="showAddForm" class="form-container">
-      <input v-model="newUser.name" placeholder="Name" class="input">
-      <input v-model="newUser.email" placeholder="Email" class="input">
-      <button @click="addUser" class="btn save-btn">
-        <i class="fas fa-save"></i>
-        <span>Save</span>
-      </button>
-    </div>
+   <div v-if="showAddForm" class="form-container">
+    <input 
+      v-model="newUser.name" 
+      placeholder="Name" 
+      class="input" 
+      :class="{'error': errors.name}"
+    >
+    <span v-if="errors.name" class="error-msg">{{ errors.name }}</span>
+    
+    <input 
+      v-model="newUser.email" 
+      placeholder="Email" 
+      class="input" 
+      :class="{'error': errors.email}"
+    >
+    <span v-if="errors.email" class="error-msg">{{ errors.email }}</span>
+    
+    <button 
+      @click="addUser" 
+      class="btn save-btn" 
+      :disabled="hasErrors"
+    >
+      <i class="fas fa-save"></i>
+      <span>Save</span>
+    </button>
+  </div>
     
     <ul class="user-list">
       <li v-for="(user, index) in users" :key="index" class="user-item">
@@ -30,7 +48,7 @@
           <button @click="editUser(index)" class="btn edit-btn">
             <i class="fas fa-edit"></i>
           </button>
-          <button @click="removeUser(index)" class="btn delete-btn">
+          <button @click="openConfirmDelete(index)" class="btn delete-btn">
             <i class="fas fa-trash-alt"></i>
           </button>
         </div>
@@ -38,32 +56,67 @@
     </ul>
     
     <div v-if="showEditForm" class="modal-overlay" @click="closeModal">
+    <div class="modal-content" @click.stop>
+      <h2>Edit User</h2>
+      <div class="form-group">
+        <label for="edit-name">Username</label>
+        <input 
+          id="edit-name" 
+          v-model="editUserData.name" 
+          placeholder="Username" 
+          class="modal-input" 
+          :class="{'error': errors.name}"
+        >
+        <span v-if="errors.name" class="error-msg">{{ errors.name }}</span>
+      </div>
+      <div class="form-group">
+        <label for="edit-email">Email</label>
+        <input 
+          id="edit-email" 
+          v-model="editUserData.email" 
+          placeholder="Email" 
+          class="modal-input" 
+          :class="{'error': errors.email}"
+        >
+        <span v-if="errors.email" class="error-msg">{{ errors.email }}</span>
+      </div>
+      <div class="modal-button">
+        <button 
+          @click="updateUser" 
+          class="btn save-btn" 
+          :disabled="hasErrors"
+        >
+          <i class="fas fa-save"></i>
+          <span>Save</span>
+        </button>
+        <button @click="closeModal" class="btn cancel-btn">
+          <i class="fas fa-times"></i>
+          <span>Cancel</span>
+        </button>
+      </div>
+    </div> 
+  </div>
+
+   <div v-if="showConfirmDelete" class="modal-overlay" @click="closeConfirmDelete">
       <div class="modal-content" @click.stop>
-        <h2>Edit User</h2>
-        <div class="form-group">
-          <label for="edit-name">Username</label>
-          <input id="edit-name" v-model="editUserData.name" placeholder="Username" class="modal-input">
-        </div>
-        <div class="form-group">
-          <label for="edit-email">Email</label>
-          <input id="edit-email" v-model="editUserData.email" placeholder="Email" class="modal-input">
-        </div>
+        <h2>Confirm Delete</h2>
+        <p>Are you sure you want to delete this user?</p>
         <div class="modal-button">
-          <button @click="updateUser" class="btn save-btn">
-            <i class="fas fa-save"></i>
-            <span>Save</span>
+          <button @click="confirmDelete" class="btn delete-btn">
+            <span>Delete</span>
           </button>
-          <button @click="closeModal" class="btn cancel-btn">
-            <i class="fas fa-times"></i>
+          <button @click="closeConfirmDelete" class="btn cancel-btn">
             <span>Cancel</span>
-          </button></div>
+          </button>
+        </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useUserStore } from './stores/userStore'
 
 export default {
@@ -71,16 +124,31 @@ export default {
     const userStore = useUserStore()
     const showAddForm = ref(false)
     const showEditForm = ref(false)
+    const showConfirmDelete = ref(false)
     const newUser = ref({ name: '', email: '' })
     const editUserData = ref({ name: '', email: '' })
     const editingIndex = ref(null)
+    const deletingIndex = ref(null)
+    const errors = ref({ name: null, email: null })
 
     const users = computed(() => userStore.users)
 
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+    function validate(user) {
+      errors.value.name = user.name ? null : 'Username is required.'
+      errors.value.email = user.email 
+        ? (emailPattern.test(user.email) ? null : 'Invalid email address.')
+        : 'Email is required.'
+    }
+
     function addUser() {
-      userStore.addUser({ ...newUser.value })
-      newUser.value = { name: '', email: '' }
-      showAddForm.value = false
+      validate(newUser.value)
+      if (!hasErrors.value) {
+        userStore.addUser({ ...newUser.value })
+        newUser.value = { name: '', email: '' }
+        showAddForm.value = false
+      }
     }
 
     function editUser(index) {
@@ -90,32 +158,60 @@ export default {
     }
 
     function updateUser() {
-      userStore.updateUser(editingIndex.value, { ...editUserData.value })
-      closeModal()
+      validate(editUserData.value)
+      if (!hasErrors.value) {
+        userStore.updateUser(editingIndex.value, { ...editUserData.value })
+        closeModal()
+      }
     }
 
-    function removeUser(index) {
-      userStore.removeUser(index)
+    function openConfirmDelete(index) {
+      deletingIndex.value = index
+      showConfirmDelete.value = true
+    }
+
+    function confirmDelete() {
+      if (deletingIndex.value !== null) {
+        userStore.removeUser(deletingIndex.value)
+        deletingIndex.value = null
+        showConfirmDelete.value = false
+      }
+    }
+
+    function closeConfirmDelete() {
+      showConfirmDelete.value = false
+      deletingIndex.value = null
     }
 
     function closeModal() {
       showEditForm.value = false
     }
 
+    const hasErrors = computed(() => errors.value.name || errors.value.email)
+
+    watch(newUser, () => validate(newUser.value), { deep: true })
+    watch(editUserData, () => validate(editUserData.value), { deep: true })
+
     return {
       users,
       showAddForm,
       showEditForm,
+      showConfirmDelete,
       newUser,
       editUserData,
       addUser,
       editUser,
       updateUser,
-      removeUser,
-      closeModal
+      openConfirmDelete,
+      confirmDelete,
+      closeConfirmDelete,
+      closeModal,
+      errors,
+      hasErrors
     }
   }
 }
+
 </script>
 
 <style>
@@ -293,5 +389,15 @@ export default {
   display: block;
   margin-bottom: 5px;
   font-weight: bold;
+}
+
+.error {
+  border-color: red;
+}
+
+.error-msg {
+  color: red;
+  font-size: 12px;
+  margin-top: 5px;
 }
 </style>
